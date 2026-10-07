@@ -1,0 +1,3 @@
+Deploy Yoast score sorting compatibility for multilingual admin.
+PHP source: f60e7b8af9eb01c5c51fdaab6102e8d022937e86
+Fix: Post/Product SEO and readability sorting use Yoast indexables so records without legacy _yoast_wpseo_linkdex/content_score postmeta stay visible.
