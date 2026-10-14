@@ -1,0 +1,77 @@
+name: Anhsang - SEO Files production smoke (read only)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Validate anhsangvacuocsong.vn SEO endpoints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Check canonical sitemap, robots and llms without writing to website
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import time
+          import urllib.request
+          import xml.etree.ElementTree as ET
+
+          base = "https://anhsangvacuocsong.vn"
+          paths = ["/", "/sitemap.xml", "/robots.txt", "/llms.txt"]
+          content = {}
+          for path in paths:
+              error = None
+              for attempt in range(3):
+                  try:
+                      request = urllib.request.Request(
+                          base + path,
+                          headers={"User-Agent": "Anhsang-SEO-Files-QA/1.0"},
+                      )
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          if response.status != 200:
+                              raise RuntimeError("HTTP " + str(response.status))
+                          content[path] = response.read(3_000_000).decode("utf-8-sig")
+                      break
+                  except Exception as exc:
+                      error = exc
+                      if attempt < 2:
+                          time.sleep(5)
+              if path not in content:
+                  raise RuntimeError("Failed to retrieve " + path + ": " + str(error))
+
+          root = ET.fromstring(content["/sitemap.xml"])
+          locations = [node.text.strip() for node in root.findall(".//{*}loc") if node.text]
+          if not locations:
+              raise RuntimeError("Sitemap does not contain any URL")
+          if len(locations) != len(set(locations)):
+              raise RuntimeError("Sitemap contains duplicate URL")
+          if any(not url.startswith(base + "/") for url in locations):
+              raise RuntimeError("Sitemap contains a different website's URLs")
+          if base + "/" not in locations:
+              raise RuntimeError("Sitemap does not contain homepage")
+
+          robots = content["/robots.txt"]
+          if not re.search(r"^User-agent:\s*\*", robots, re.M | re.I):
+              raise RuntimeError("robots.txt is missing user-agent rule")
+          if "Sitemap: " + base + "/sitemap.xml" not in robots:
+              raise RuntimeError("robots.txt sitemap points to a different domain")
+
+          llms = content["/llms.txt"].lstrip()
+          if not llms.startswith("#"):
+              raise RuntimeError("llms.txt has no title")
+          if base + "/" not in llms:
+              raise RuntimeError("llms.txt must link to this website")
+
+          for path in ["/sitemap.xml", "/robots.txt", "/llms.txt"]:
+              if re.search(r"xuongmunonbaohiem|tuannguyen\.io\.vn|blue[ -]?sea", content[path], re.I):
+                  raise RuntimeError("Blue Sea project references leaked into " + path)
+
+          if len(content["/"]) < 300:
+              raise RuntimeError("Homepage HTML is unexpectedly short")
+          print("ANHSANG_SEO_FILES_SMOKE_PASS", {"sitemap_urls": len(locations)})
+          PY
