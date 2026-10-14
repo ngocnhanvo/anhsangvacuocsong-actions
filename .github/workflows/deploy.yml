@@ -183,13 +183,25 @@ jobs:
           cd ..
           rm -rf dist deploy
 
-      # Preserve the completed Astro build. If FTP fails, the exact ZIP can be
-      # redeployed without rebuilding or fetching new WordPress data.
-      - name: Archive verified deployment ZIP for FTP-only recovery
+      # The Actions repository is public. NEVER publish the ZIP or .env in
+      # plaintext; preserve only a password-encrypted copy for FTP recovery.
+      - name: Encrypt completed Astro package before retention
+        shell: bash
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$FTP_PASSWORD"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in source/upload/escvn.zip -out source/upload/escvn.zip.enc \
+            -pass env:FTP_PASSWORD
+          test -s source/upload/escvn.zip.enc
+
+      - name: Archive encrypted ZIP for FTP-only recovery
         uses: actions/upload-artifact@v4
         with:
-          name: anhsangvacuocsong-ftp-package
-          path: source/upload/escvn.zip
+          name: anhsangvacuocsong-ftp-package-encrypted
+          path: source/upload/escvn.zip.enc
           if-no-files-found: error
           retention-days: 2
           compression-level: 0
