@@ -28,7 +28,7 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run scripts/sync-seo-files.test.ts scripts/generate-sitemap-robots.test.ts
+      - run: pnpm exec vitest run scripts/sync-seo-files.test.ts scripts/generate-sitemap-robots.test.ts scripts/seo-defaults.test.ts
       - run: node --check scripts/sync-seo-files.mjs
   wordpress:
     runs-on: ubuntu-latest
