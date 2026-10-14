@@ -1,0 +1,61 @@
+name: Anhsang - Cross-repo regression QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/sync-qa.yml'
+      - 'scripts/esc-resumable-ftp.sh'
+      - 'tests/esc-resumable-ftp.test.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  astro:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ngocnhanvo/anhsangvacuocsong-astro
+          ref: github
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run scripts/sync-seo-files.test.ts scripts/generate-sitemap-robots.test.ts
+      - run: node --check scripts/sync-seo-files.mjs
+  wordpress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ngocnhanvo/anhsangvacuocsong-php
+          ref: master
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          persist-credentials: false
+      - shell: bash
+        run: |
+          set -euo pipefail
+          php -l wp-content/mu-plugins/esc-seo-files.php
+          php -l wp-content/mu-plugins/disable-plugins-for-api.php
+          php -l wp-content/plugins/esc-table/views/view-edit.php
+          php -l wp-content/plugins/esc-visual-builder/includes/image-editor.php
+          php -l wp-content/plugins/esc-visual-builder/includes/item-manager.php
+          php -l wp-content/plugins/github-trigger/vcs-build-trigger.php
+          php tests/seo-files.php
+          php wp-content/mu-plugins/tests/admin-performance-menu-management.php
+          php wp-content/plugins/esc-visual-builder/tests/page-image.test.php
+          php wp-content/plugins/esc-visual-builder/tests/items-and-sections.test.php
+          node tests/esc-table-cell-preview.test.cjs
+          node tests/esc-table-image-attributes.test.cjs
+  ftp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/esc-resumable-ftp.test.sh

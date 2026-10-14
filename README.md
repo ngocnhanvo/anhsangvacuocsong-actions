@@ -1,62 +1,10 @@
-# xuongmunonbaohiem-actions
+# Ánh Sáng và Cuộc Sống Actions Hub
 
-Public GitHub Actions / CI/CD hub for **xuongmunonbaohiem.com**.
+This repo is exclusively for anhsangvacuocsong.vn.
 
-Source repositories stay private and contain application code only:
-
-- `ngocnhanvo/xuongmunonbaohiem-astro`
-  - `github` = development / test
-  - `master` = production source
-- `ngocnhanvo/xuongmunonbaohiem-php`
-  - WordPress/PHP backend
-- `ngocnhanvo/xuongmunonbaohiem-actions`
-  - CI/CD workflows, verification, deployment and E2E orchestration
-
-Production flow:
-
-```text
-WordPress Build Website
-  -> repository_dispatch: wp_trigger_build
-  -> xuongmunonbaohiem-actions
-  -> checkout xuongmunonbaohiem-astro@master
-  -> build
-  -> FTP
-  -> remote unzip
-  -> production smoke test
-```
-
-Required repository secrets:
-
-- `SOURCE_REPO_PAT`
-- `ENV_FILE`
-- `FTP_SERVER`
-- `FTP_USERNAME`
-- `FTP_PASSWORD`
-- `WP_ADMIN_URL`
-- `WP_ADMIN_USERNAME`
-- `WP_ADMIN_PASSWORD`
-
-The source repositories must not own production deployment workflows after migration is completed.
-
-
-## ESC Table preview images
-
-Workflow: `.github/workflows/tablepress-previews.yml`
-
-The workflow captures the real Astro frontend section marked with
-`data-tablepress-preview="<table-id>"`, converts the screenshot to WebP, uploads it
-to the WordPress Media Library folder `tablepress`, and writes the resulting image
-back to the ESC Table preview-image field.
-
-Modes:
-- `missing`: update only tables without a preview image.
-- `single`: update one table ID.
-- `selected`: update the requested comma/newline-separated table IDs.
-- `force=true`: replace an existing preview.
-
-The capture runtime is `automation/tablepress/previews.mjs` in
-`ngocnhanvo/xuongmunonbaohiem-php@master`.
-
-Astro preview markers are developed on `ngocnhanvo/xuongmunonbaohiem-astro@github`.
-The preview workflow targets the production frontend, so those markers must reach
-production before production screenshots can be generated.
+- **sync-qa.yml**: read-only QA of Astro `github`, PHP `master`, FTP recovery script.
+- **deploy.yml**: WordPress `wp_trigger_build` or manual GitHub workflow for Astro `master` only. Requires matching `WC_URL_CLIENT=https://anhsangvacuocsong.vn`, matching FTP path `/domains/anhsangvacuocsong.vn/public_html/`, valid SEO artifact, and signed remote unzip preflight.
+- Secrets: `SOURCE_REPO_PAT`, `ENV_FILE`, `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`.
+- WordPress PHP must configure `VCS_GH_REPO=anhsangvacuocsong-actions`.
+- Code ported into Astro `github` must be integrated safely into `master` before production deploy. The current histories are unrelated; **do not force-push or overwrite master**.
+- The original Blue Sea workflows under `workflow-templates/blue-sea/` are historical, INACTIVE and not runnable for this project.
