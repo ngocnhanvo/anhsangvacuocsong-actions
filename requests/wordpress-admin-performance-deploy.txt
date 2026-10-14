@@ -1,5 +1,2 @@
-Deploy WordPress admin performance runtime.
-Source: ngocnhanvo/xuongmunonbaohiem-php@master
-Expected source commit: 087de4216c378fbd284b77979f3f869d38918ad5
-Reason: restore The Paste on TablePress editor while keeping TablePress heartbeat slim.
-Requested: 2026-10-06
+Deploy ESC Visual Builder Pages menu hotfix. PHP master 02851721b25760185f85c188d6a490958442f033.
+Previous predeploy regression fixture corrected (active plugin list supplied). Validate and upload only two MU plugins if PASS.

@@ -1,11 +1,11 @@
 import { chromium } from 'playwright';
 
-const ADMIN_URL = process.env.WP_ADMIN_URL;
+const ADMIN_URL = process.env.WC_URL;
 const USERNAME = process.env.WP_ADMIN_USERNAME;
 const PASSWORD = process.env.WP_ADMIN_PASSWORD;
 
 if (!ADMIN_URL || !USERNAME || !PASSWORD) {
-  throw new Error('Missing WP_ADMIN_URL / WP_ADMIN_USERNAME / WP_ADMIN_PASSWORD secrets.');
+  throw new Error('Missing WC_URL / WP_ADMIN_USERNAME / WP_ADMIN_PASSWORD secrets.');
 }
 
 const origin = new URL(ADMIN_URL).origin;
@@ -114,6 +114,8 @@ try {
     const body = new URLSearchParams({
       action: 'vcs_trigger_build',
       nonce: globalThis.vcsBuild.nonce,
+      // E2E chạy lại build kể cả khi không có pending logs.
+      force_build: '1',
     });
 
     const response = await fetch(globalThis.vcsBuild.ajax_url, {
