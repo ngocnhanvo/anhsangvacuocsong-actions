@@ -182,17 +182,6 @@ jobs:
           cd ..
           rm -rf dist deploy
 
-      # Preserve the output of a successful build so a transient FTP failure
-      # does not force a second identical Astro build on manual recovery.
-      - name: Archive deployment package for FTP recovery
-        uses: actions/upload-artifact@v4
-        with:
-          name: anh-sang-ftp-package
-          path: source/upload/escvn.zip
-          if-no-files-found: error
-          retention-days: 2
-          compression-level: 0
-
       - name: Prepare lftp without unnecessary apt index refresh
         shell: bash
         run: |
