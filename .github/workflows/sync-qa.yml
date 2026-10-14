@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/deploy.yml'
       - '.github/workflows/sync-qa.yml'
+      - '.github/workflows/ftp-artifact-recovery.yml'
       - 'scripts/esc-resumable-ftp.sh'
       - 'tests/esc-resumable-ftp.test.sh'
   workflow_dispatch:
@@ -28,7 +29,8 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run scripts/sync-seo-files.test.ts scripts/generate-sitemap-robots.test.ts scripts/seo-defaults.test.ts
+      - name: Validate SEO files, Google tracking and Visual Builder
+        run: pnpm exec vitest run scripts/sync-seo-files.test.ts scripts/generate-sitemap-robots.test.ts scripts/seo-defaults.test.ts src/lib/googleServices.test.ts src/lib/googleLeadConversions.test.ts src/lib/wordpress/builderAutoDiscovery.test.mjs src/lib/wordpress/builderPageImages.test.mjs src/lib/wordpress/builderCustomerSlider.test.mjs
       - run: node --check scripts/sync-seo-files.mjs
       - name: Compile Astro development without deployment
         env:
@@ -61,6 +63,8 @@ jobs:
           php -l wp-content/plugins/esc-visual-builder/includes/item-manager.php
           php -l wp-content/plugins/github-trigger/vcs-build-trigger.php
           php tests/seo-files.php
+          php -l wp-content/mu-plugins/esc-marketing-settings.php
+          php tests/marketing-tracking-settings.php
           php wp-content/mu-plugins/tests/admin-performance-menu-management.php
           php wp-content/plugins/esc-visual-builder/tests/page-image.test.php
           php wp-content/plugins/esc-visual-builder/tests/items-and-sections.test.php

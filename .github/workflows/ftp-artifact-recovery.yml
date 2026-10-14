@@ -1,0 +1,167 @@
+name: Ánh Sáng và Cuộc Sống FTP Artifact Recovery
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Run ID of a completed Ánh Sáng deployment (ZIP retained for 2 days)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: anhsangvacuocsong-actions-deploy
+  cancel-in-progress: false
+
+jobs:
+  ftp-recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select archived package from previous build
+        id: archive
+        env:
+          REQUESTED_RUN: ${{ inputs.source_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="$REQUESTED_RUN"
+          [[ "$run_id" =~ ^[0-9]{8,20}$ ]] || { echo "::error::Invalid build run ID"; exit 1; }
+          echo "source_run=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Verify source run belongs to this project and is completed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ steps.archive.outputs.source_run }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "ngocnhanvo/anhsangvacuocsong-actions" ]] || { echo '::error::Wrong repository'; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" > /tmp/esc-source-run.json
+          python3 - <<'PY'
+          import json
+          run=json.load(open('/tmp/esc-source-run.json',encoding='utf8'))
+          if not (run.get('name') == 'Deploy Ánh Sáng và Cuộc Sống Astro Production'
+                  and run.get('status') == 'completed'
+                  and run.get('head_repository',{}).get('full_name') == 'ngocnhanvo/anhsangvacuocsong-actions'):
+              raise SystemExit('REFUSED: run is not a completed deployment from this project')
+          print('Verified deployment run:',run['id'],run.get('conclusion'))
+          PY
+      - name: Strictly verify frontend identity for recovery
+        shell: bash
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          values=[]
+          for row in os.environ.get('ENV_FILE','').splitlines():
+              row=row.strip()
+              if row.startswith('export '): row=row[7:].strip()
+              if row.startswith('WC_URL_CLIENT='):
+                  values.append(row.partition('=')[2].strip().strip('"').strip("'").rstrip('/'))
+          if values != ['https://anhsangvacuocsong.vn']:
+              raise SystemExit('REFUSED: wrong frontend domain for artifact recovery')
+          print('Target verified: https://anhsangvacuocsong.vn')
+          PY
+      - name: Download exact ZIP from verified build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ steps.archive.outputs.source_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p source/upload
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name anhsangvacuocsong-ftp-package --dir source/upload
+          test -s source/upload/escvn.zip
+          unzip -tq source/upload/escvn.zip
+          echo "Using preserved ZIP from Actions run $SOURCE_RUN; Astro build will NOT run again."
+      - name: Prepare lftp without unnecessary apt index refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          started=$SECONDS
+          if ! command -v lftp >/dev/null 2>&1; then
+            if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends lftp; then
+              echo "::warning::lftp install needed an apt index refresh; retrying."
+              sudo apt-get update -y -qq
+              sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends lftp
+            fi
+          fi
+          lftp --version | head -n 1
+          elapsed=$((SECONDS - started))
+          echo "lftp setup completed in ${elapsed}s"
+          echo "- lftp setup: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve Astro FTP target
+        id: ftp_target
+        shell: bash
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+          FTP_ASTRO_DIR: ${{ vars.FTP_ASTRO_DIR }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          url=$(printf '%s\n' "$ENV_FILE" | sed -n 's/^WC_URL_CLIENT=//p' | tail -1 | tr -d '\r\"\047')
+          [[ "$url" =~ ^https?://([a-zA-Z0-9.-]+)(:[0-9]+)?/?$ ]] || { echo '::error::Invalid or missing WC_URL_CLIENT in ENV_FILE'; exit 1; }
+          host="${BASH_REMATCH[1],,}"
+          [[ "$host" == *.* && "$host" != *..* && "$host" =~ ^[a-z0-9.-]+$ ]] || exit 1
+          default_dir="/domains/$host/public_html/"
+          target="${FTP_ASTRO_DIR:-$default_dir}"
+          [[ "$default_dir" == "/domains/anhsangvacuocsong.vn/public_html/" && "$target" == "$default_dir" ]] || { echo '::error::FTP target is not this project'; exit 1; }
+          [[ "$target" =~ ^/[a-zA-Z0-9._/-]+/$ && "$target" != *..* && "$target" != *'//'* ]] || { echo '::error::Unsafe FTP target'; exit 1; }
+          echo "Using FTP target: $target (frontend: $host)"
+          if [[ "$target" != "$default_dir" ]]; then echo '::warning::Explicit FTP_ASTRO_DIR override in use'; fi
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "ftp://$FTP_SERVER" <<LFTP
+          set cmd:fail-exit yes
+          set net:max-retries 3
+          set net:timeout 30
+          set ftp:passive-mode yes
+          set ssl:verify-certificate no
+          cd "$target"
+          pwd
+          bye
+          LFTP
+          echo "path=$target" >> "$GITHUB_OUTPUT"
+      - name: Verify signed WordPress unzip protocol before uploading
+        shell: bash
+        env:
+          SOURCE_REPO_PAT: ${{ secrets.SOURCE_REPO_PAT }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+          ASTRO_FTP_TARGET: ${{ steps.ftp_target.outputs.path }}
+          FTP_ASTRO_DIR: ${{ vars.FTP_ASTRO_DIR }}
+          ZIP_PATH: source/upload/escvn.zip
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/esc-remote-unzip.py
+          python3 scripts/esc-remote-unzip.py verify
+      - name: Resume FTP upload from archived ZIP
+        shell: bash
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          ASTRO_FTP_TARGET: ${{ steps.ftp_target.outputs.path }}
+          ZIP_PATH: source/upload/escvn.zip
+        run: |
+          set -euo pipefail
+          bash scripts/esc-resumable-ftp.sh
+      - name: Trigger signed remote unzip and validate Astro artifact
+        shell: bash
+        env:
+          SOURCE_REPO_PAT: ${{ secrets.SOURCE_REPO_PAT }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+          ASTRO_FTP_TARGET: ${{ steps.ftp_target.outputs.path }}
+          FTP_ASTRO_DIR: ${{ vars.FTP_ASTRO_DIR }}
+          ZIP_PATH: source/upload/escvn.zip
+        run: |
+          set -euo pipefail
+          started=$SECONDS
+          python3 scripts/esc-remote-unzip.py unpack
+          elapsed=$((SECONDS - started))
+          echo "Signed remote unzip completed in ${elapsed}s"
+          echo "- Authenticated remote unzip: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
