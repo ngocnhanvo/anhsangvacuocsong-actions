@@ -8,3 +8,5 @@ This repo is exclusively for anhsangvacuocsong.vn.
 - WordPress PHP must configure `VCS_GH_REPO=anhsangvacuocsong-actions`.
 - Code ported into Astro `github` must be integrated safely into `master` before production deploy. The current histories are unrelated; **do not force-push or overwrite master**.
 - The original Blue Sea workflows under `workflow-templates/blue-sea/` are historical, INACTIVE and not runnable for this project.
+
+Security: Production deployment package is transferred through validated FTP only, without uploading it as an Actions artifact in this public repository. Cross-repository CI requires the SOURCE_REPO_PAT repository secret.
