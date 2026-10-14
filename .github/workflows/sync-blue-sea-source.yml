@@ -1,0 +1,111 @@
+name: Sync latest Blue Sea source (staging)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/sync-blue-sea-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-blue-sea-source-anhsang
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_SYNC_PAT: ${{ secrets.SOURCE_REPO_PAT }}
+    steps:
+      - name: Copy current Blue Sea repositories without deploying
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_SYNC_PAT}" ]; then
+            echo "::error::SOURCE_REPO_PAT must be set in this repository"
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/git-askpass.sh" <<'ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GH_SYNC_PAT" ;;
+          esac
+          ASKPASS
+          chmod 700 "$RUNNER_TEMP/git-askpass.sh"
+          export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh" GIT_TERMINAL_PROMPT=0
+          git config --global user.name "anhsang-source-sync"
+          git config --global user.email "source-sync@users.noreply.github.com"
+          mkdir -p "$RUNNER_TEMP/source-sync"
+          cd "$RUNNER_TEMP/source-sync"
+          clone_ref() {
+            local repo="$1" branch="$2" path="$3"
+            git clone --quiet --depth 1 --single-branch --branch "$branch" "https://github.com/ngocnhanvo/${repo}.git" "$path"
+          }
+          git_sync_push() {
+            local path="$1" msg="$2"
+            git -C "$path" add -A
+            if git -C "$path" diff --cached --quiet; then
+              echo "$path: already synchronized"
+            else
+              git -C "$path" commit -m "$msg [skip ci]"
+              git -C "$path" push origin HEAD
+            fi
+            printf '%s %s\n' "$path" "$(git -C "$path" rev-parse HEAD)" >> "$RUNNER_TEMP/sync-shas.txt"
+          }
+          disable_automated_triggers() {
+            local target="$1"
+            python3 - "$target" <<'PY'
+          import pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          for p in root.glob("*.yml"):
+              if p.name == "sync-blue-sea-source.yml":
+                  continue
+              data = p.read_text(encoding="utf-8")
+              lines = data.splitlines(keepends=True)
+              begin = next((i for i,line in enumerate(lines) if line.startswith("on:")), None)
+              if begin is None:
+                  continue
+              end = begin + 1
+              while end < len(lines) and (not lines[end].strip() or lines[end][0].isspace() or lines[end].lstrip().startswith("#")):
+                  end += 1
+              lines[begin:end] = ["on:\n", "  workflow_dispatch:\n", "\n"]
+              p.write_text("".join(lines), encoding="utf-8")
+          PY
+          }
+          echo "Cloning current source and target branches..."
+          clone_ref xuongmunonbaohiem-astro github astro-source
+          clone_ref anhsangvacuocsong-astro github astro-target
+          clone_ref xuongmunonbaohiem-php master php-source
+          clone_ref anhsangvacuocsong-php master php-target
+          clone_ref xuongmunonbaohiem-actions main actions-source
+          clone_ref anhsangvacuocsong-actions main actions-target
+
+          echo "Sync Astro: source github -> target github; preserve local .github workflows"
+          rsync -a --delete --exclude='.git/' --exclude='.github/' astro-source/ astro-target/
+          git_sync_push astro-target "Sync Blue Sea Astro latest github to Anhsang development"
+
+          echo "Sync PHP: source master -> target master; preserve target GitHub automation"
+          rsync -a --delete --exclude='.git/' --exclude='.github/' php-source/ php-target/
+          if [ -d php-source/.github/workflows ]; then
+            mkdir -p php-target/.github/workflows
+            cp -a php-source/.github/workflows/. php-target/.github/workflows/
+            disable_automated_triggers php-target/.github/workflows
+          fi
+          git_sync_push php-target "Sync Blue Sea PHP latest master to Anhsang"
+
+          echo "Sync Actions: full scripts, tests, reports and workflows"
+          rsync -a --delete --exclude='.git/' --exclude='.github/workflows/sync-blue-sea-source.yml' actions-source/ actions-target/
+          disable_automated_triggers actions-target/.github/workflows
+          git_sync_push actions-target "Sync Blue Sea Actions latest main to Anhsang (manual-only inherited workflows)"
+          {
+            echo "### Source synchronized; no FTP/deploy triggered"
+            echo '~~~'
+            cat "$RUNNER_TEMP/sync-shas.txt"
+            echo '~~~'
+            echo "Astro master not modified. Copied legacy Actions workflows are manual-only for domain safety."
+          } >> "$GITHUB_STEP_SUMMARY"
