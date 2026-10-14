@@ -30,6 +30,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run scripts/sync-seo-files.test.ts scripts/generate-sitemap-robots.test.ts scripts/seo-defaults.test.ts
       - run: node --check scripts/sync-seo-files.mjs
+      - name: Compile Astro development without deployment
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ENV_FILE"
+          printf '%s\n' "$ENV_FILE" > .env
+          pnpm run build-git
+          node --check dist/server/entry.mjs
+          test -s dist/client/sitemap.xml
+
   wordpress:
     runs-on: ubuntu-latest
     steps:
