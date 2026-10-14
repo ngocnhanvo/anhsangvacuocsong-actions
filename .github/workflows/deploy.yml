@@ -156,8 +156,9 @@ jobs:
           node --input-type=module -e 'import { syncSeoFiles } from "./scripts/sync-seo-files.mjs"; await syncSeoFiles({ distDir: "dist/client" });'
           test -s dist/client/sitemap.xml
           test -s dist/client/robots.txt
+          test -s dist/client/llms.txt
           grep -q 'https://anhsangvacuocsong.vn/' dist/client/sitemap.xml
-          if grep -Eqi 'xuongmunonbaohiem|blue-sea|\.io\.vn/' dist/client/sitemap.xml dist/client/robots.txt; then
+          if grep -Eqi 'xuongmunonbaohiem|blue-sea|\.io\.vn/' dist/client/sitemap.xml dist/client/robots.txt dist/client/llms.txt; then
             echo '::error::SEO artifact contains old-project URLs.'
             exit 1
           fi
